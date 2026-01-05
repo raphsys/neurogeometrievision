@@ -44,12 +44,9 @@ suvivi_*.txt
 Thumbs.db
 
 #Autres
-.gitignore
 GEMINI.md
 generate_full_snapshot.py
 profile_modules.py
-requirements.txt
-setup.py
 documentations/
 examples/
 
