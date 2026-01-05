@@ -1,0 +1,9 @@
+# Requirements for NeuroGeomVision
+numpy>=1.21.0
+scipy>=1.7.0
+torch>=1.9.0
+matplotlib>=3.4.0
+pillow>=8.3.0
+opencv-python>=4.5.0  # Optionnel pour le traitement d'images avancé
+jupyter>=1.0.0  # Optionnel pour les notebooks
+scikit-image>=0.18.0  # Optionnel pour les utilitaires d'image

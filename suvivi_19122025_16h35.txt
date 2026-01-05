@@ -1,0 +1,788 @@
+cortical_models.py
+PY 47.07KB
+Ces améliorations été déjà implémentées.
+Regardes
+Ce module cortical_models.py est très complet et bien structuré ! Voici mes observations sur ce code déjà implémenté :
+
+Points forts du code
+Architecture hiérarchique bien conçue : La classe HierarchicalVisionModel suit une structure V1 → V2 → V4 → MT qui correspond à l'organisation corticale biologique.
+
+Modularité : Chaque aire corticale est séparée en modules spécialisés (orientation, couleur, mouvement, etc.).
+
+Séparation des voies : La classe WhatWherePathways implémente bien la distinction ventrale/dorsale.
+
+Gestion dynamique des features : La méthode _compute_feature_dim() calcule automatiquement la dimension des features.
+
+Fonctionnalités utilitaires complètes :
+
+Visualisation des features
+
+Sauvegarde/chargement de checkpoints
+
+Traitement par batch
+
+Mode évaluation optimisé
+
+Bio-inspiration : La classe BioInspiredCortex intègre tous les modules de manière cohérente.
+
+Suggestions d'améliorations potentielles
+1. Gestion des dimensions
+python
+# Dans extract_v2_features, pourrait être simplifié
+def extract_v2_features(self, v1_features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    # Utiliser des fonctions utilitaires pour la gestion des dimensions
+    v1_response = self._ensure_4d(v1_features['response_map'])
+    # ...
+2. Optimisation mémoire
+Ajouter une option pour désactiver le stockage des résultats intermédiaires :
+
+python
+def forward(self, x: torch.Tensor, store_intermediate: bool = False) -> Dict[str, torch.Tensor]:
+    # Nettoyer les résultats intermédiaires si non nécessaires
+3. Configuration centralisée
+Créer une classe de configuration pour éviter la duplication des paramètres :
+
+python
+@dataclass
+class CortexConfig:
+    input_shape: Tuple[int, int]
+    use_color: bool = True
+    use_motion: bool = True
+    n_orientations: int = 8
+    ventral_features: int = 256
+    dorsal_features: int = 128
+    # ...
+4. Tests unitaires
+Ajouter des tests pour chaque composant :
+
+python
+def test_hierarchical_vision_model():
+    model = HierarchicalVisionModel(input_shape=(128, 128))
+    test_input = torch.randn(2, 3, 128, 128)
+    output = model(test_input)
+    assert 'classification' in output
+    # ...
+5. Documentation améliorée
+Ajouter des exemples d'utilisation et des diagrammes d'architecture en commentaires.
+
+6. Support multi-GPU
+python
+def parallel_forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    if torch.cuda.device_count() > 1:
+        return nn.parallel.data_parallel(self, x)
+    return self.forward(x)
+7. Métriques de performance
+Ajouter des méthodes pour mesurer :
+
+Temps d'inférence par couche
+
+Utilisation mémoire
+
+Précision par aire corticale simulée
+
+8. Interface de débogage
+python
+def debug_forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    """Version avec logging détaillé"""
+    for name, module in self.named_modules():
+        # Log des activations, gradients, etc.
+        pass
+Points à vérifier
+Compatibilité des dimensions : Vérifier que toutes les fonctions extract_*_features gèrent correctement les différents formats d'entrée.
+
+Gestion des erreurs : Ajouter plus de vérifications et messages d'erreur explicites.
+
+Performance : Profiler le code pour identifier les goulots d'étranglement.
+
+Compatibilité : Tester avec différentes versions de PyTorch.
+
+Ce code est déjà d'excellente qualité et constitue une base solide pour des simulations de cortex visuel. Les suggestions ci-dessus visent principalement à améliorer la maintenabilité, la robustesse et la facilité d'utilisation.
+
+On continue alors le projet la suite
+Parfait ! Continuons à développer ce projet de modélisation du cortex visuel. Voici la suite logique du projet avec les prochains modules à implémenter :
+
+Prochaines étapes suggérées
+1. Module de Rétine Bio-inspirée (retina.py)
+python
+"""
+Module retina.py - Modélisation de la rétine bio-inspirée
+Récepteurs photorécepteurs, cellules bipolaires, cellules ganglionnaires
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from typing import Tuple, List, Dict, Optional
+import math
+
+class PhotoreceptorLayer(nn.Module):
+    """Couche de photorécepteurs (cônes et bâtonnets)"""
+    
+    def __init__(self,
+                 input_shape: Tuple[int, int],
+                 photoreceptor_types: List[str] = ['L', 'M', 'S'],  # Cones L, M, S
+                 device: str = 'cpu'):
+        super().__init__()
+        
+        self.input_shape = input_shape
+        self.photoreceptor_types = photoreceptor_types
+        self.device = device
+        
+        # Sensibilité spectrale des cônes (approximation)
+        self.spectral_sensitivity = {
+            'L': torch.tensor([0.66, 0.33, 0.01], device=device),  # Rouge
+            'M': torch.tensor([0.43, 0.53, 0.04], device=device),  # Vert
+            'S': torch.tensor([0.05, 0.24, 0.71], device=device)   # Bleu
+        }
+        
+        # Adaptation à la lumière
+        self.adaptation = nn.Parameter(torch.ones(len(photoreceptor_types)))
+        
+        # Bruit de photon (modélisé comme bruit additif)
+        self.photon_noise_std = 0.01
+        
+    def forward(self, image: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Simule la réponse des photorécepteurs"""
+        batch_size, channels, height, width = image.shape
+        
+        responses = {}
+        
+        for i, p_type in enumerate(self.photoreceptor_types):
+            # Appliquer la sensibilité spectrale
+            sensitivity = self.spectral_sensitivity[p_type].view(1, 3, 1, 1)
+            
+            # Produit scalaire avec les canaux RGB
+            if channels == 3:
+                response = (image * sensitivity).sum(dim=1, keepdim=True)
+            else:
+                response = image
+            
+            # Adaptation non linéaire (Naka-Rushton)
+            adapted = response / (response + self.adaptation[i])
+            
+            # Ajouter du bruit de photon
+            if self.training:
+                noise = torch.randn_like(adapted) * self.photon_noise_std
+                adapted = adapted + noise
+            
+            responses[p_type] = adapted
+        
+        return {
+            'photoreceptor_responses': responses,
+            'combined_response': torch.cat(list(responses.values()), dim=1)
+        }
+
+
+class BipolarCellLayer(nn.Module):
+    """Couche de cellules bipolaires (centre-surround)"""
+    
+    def __init__(self,
+                 input_channels: int = 3,
+                 bipolar_types: List[str] = ['ON', 'OFF', 'ON-OFF'],
+                 receptive_field_size: int = 5,
+                 device: str = 'cpu'):
+        super().__init__()
+        
+        self.bipolar_types = bipolar_types
+        self.receptive_field_size = receptive_field_size
+        
+        # Filtres centre-surround (différence de Gaussiennes)
+        self.center_surround_filters = nn.ModuleDict()
+        
+        for b_type in bipolar_types:
+            if b_type == 'ON':
+                # Centre excitateur, surround inhibiteur
+                self.center_surround_filters[b_type] = self._create_on_filter(input_channels)
+            elif b_type == 'OFF':
+                # Centre inhibiteur, surround excitateur
+                self.center_surround_filters[b_type] = self._create_off_filter(input_channels)
+            else:  # ON-OFF
+                self.center_surround_filters[b_type] = self._create_onoff_filter(input_channels)
+    
+    def _create_on_filter(self, channels: int) -> nn.Module:
+        return nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1, groups=channels),
+            nn.ReLU(),
+            nn.Conv2d(channels, channels, kernel_size=self.receptive_field_size, 
+                     padding=self.receptive_field_size//2, groups=channels),
+            nn.ReLU(inplace=True)
+        )
+    
+    def forward(self, photoreceptor_output: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Traite les signaux des photorécepteurs"""
+        responses = {}
+        
+        for b_type, filter_module in self.center_surround_filters.items():
+            responses[b_type] = filter_module(photoreceptor_output)
+        
+        return {
+            'bipolar_responses': responses,
+            'combined_response': torch.cat(list(responses.values()), dim=1)
+        }
+
+
+class GanglionCellLayer(nn.Module):
+    """Couche de cellules ganglionnaires (P et M)"""
+    
+    def __init__(self,
+                 input_channels: int = 6,
+                 ganglion_types: List[str] = ['P', 'M'],  # Parvocellular, Magnocellular
+                 output_dim: int = 100,
+                 device: str = 'cpu'):
+        super().__init__()
+        
+        self.ganglion_types = ganglion_types
+        self.output_dim = output_dim
+        
+        # Cellules P (haute résolution spatiale, couleur)
+        if 'P' in ganglion_types:
+            self.parvocellular_pathway = nn.Sequential(
+                nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(32, 16, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten(),
+                nn.Linear(16, output_dim // 2)
+            )
+        
+        # Cellules M (basse résolution, mouvement)
+        if 'M' in ganglion_types:
+            self.magnocellular_pathway = nn.Sequential(
+                nn.Conv2d(input_channels, 16, kernel_size=5, padding=2),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(16, 8, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten(),
+                nn.Linear(8, output_dim // 2)
+            )
+        
+    def forward(self, bipolar_output: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Génère les potentiels d'action des cellules ganglionnaires"""
+        responses = {}
+        
+        if hasattr(self, 'parvocellular_pathway'):
+            responses['P'] = self.parvocellular_pathway(bipolar_output)
+        
+        if hasattr(self, 'magnocellular_pathway'):
+            responses['M'] = self.magnocellular_pathway(bipolar_output)
+        
+        # Combiner les réponses
+        if responses:
+            combined = torch.cat(list(responses.values()), dim=1)
+        else:
+            combined = torch.zeros(bipolar_output.shape[0], self.output_dim, device=bipolar_output.device)
+        
+        return {
+            'ganglion_responses': responses,
+            'combined_response': combined,
+            'spike_trains': self._generate_spikes(combined)
+        }
+    
+    def _generate_spikes(self, rates: torch.Tensor) -> torch.Tensor:
+        """Génère des trains de spikes poissoniens"""
+        if self.training:
+            # Pour l'entraînement: taux de décharge
+            return torch.sigmoid(rates)
+        else:
+            # Pour l'inférence: génération de spikes
+            return torch.bernoulli(torch.sigmoid(rates))
+
+
+class BioInspiredRetina(nn.Module):
+    """Rétine bio-inspirée complète"""
+    
+    def __init__(self,
+                 retinal_shape: Tuple[int, int],
+                 cortical_shape: Tuple[int, int],
+                 n_ganglion_cells: int = 100,
+                 use_color: bool = True,
+                 include_retinotopic_mapping: bool = True,
+                 device: str = 'cpu'):
+        
+        super().__init__()
+        
+        self.retinal_shape = retinal_shape
+        self.cortical_shape = cortical_shape
+        self.device = device
+        
+        # 1. Photorécepteurs
+        self.photoreceptors = PhotoreceptorLayer(
+            input_shape=retinal_shape,
+            photoreceptor_types=['L', 'M', 'S'] if use_color else ['luminance'],
+            device=device
+        )
+        
+        # 2. Cellules bipolaires
+        self.bipolar_cells = BipolarCellLayer(
+            input_channels=3 if use_color else 1,
+            device=device
+        )
+        
+        # 3. Cellules ganglionnaires
+        self.ganglion_cells = GanglionCellLayer(
+            input_channels=9 if use_color else 3,
+            output_dim=n_ganglion_cells,
+            device=device
+        )
+        
+        # 4. Mapping rétinotopique (rétine → cortex)
+        if include_retinotopic_mapping:
+            self.retinotopic_mapping = RetinotopicMapping(
+                retinal_shape=retinal_shape,
+                cortical_shape=cortical_shape,
+                device=device
+            )
+        
+    def forward(self, 
+                image: torch.Tensor,
+                return_cortical: bool = False) -> Dict[str, torch.Tensor]:
+        """Traite une image à travers la rétine"""
+        
+        # 1. Photorécepteurs
+        photoreceptor_output = self.photoreceptors(image)
+        
+        # 2. Cellules bipolaires
+        bipolar_output = self.bipolar_cells(photoreceptor_output['combined_response'])
+        
+        # 3. Cellules ganglionnaires
+        ganglion_output = self.ganglion_cells(bipolar_output['combined_response'])
+        
+        # 4. Mapping rétinotopique (si activé)
+        if hasattr(self, 'retinotopic_mapping'):
+            cortical_representation = self.retinotopic_mapping(
+                ganglion_output['combined_response']
+            )
+        else:
+            cortical_representation = ganglion_output['combined_response']
+        
+        results = {
+            'photoreceptor_output': photoreceptor_output,
+            'bipolar_output': bipolar_output,
+            'ganglion_output': ganglion_output,
+            'retinal_output': ganglion_output['combined_response']
+        }
+        
+        if return_cortical:
+            results['cortical_representation'] = cortical_representation
+        
+        return results
+    
+    def reset_state(self):
+        """Réinitialise l'état de la rétine"""
+        if hasattr(self, 'retinotopic_mapping'):
+            self.retinotopic_mapping.reset_state()
+
+
+class RetinotopicMapping(nn.Module):
+    """Mapping rétinotopique (projection rétine → cortex)"""
+    
+    def __init__(self,
+                 retinal_shape: Tuple[int, int],
+                 cortical_shape: Tuple[int, int],
+                 device: str = 'cpu'):
+        super().__init__()
+        
+        self.retinal_shape = retinal_shape
+        self.cortical_shape = cortical_shape
+        self.device = device
+        
+        # Créer une grille de coordonnées pour le mapping log-polaire
+        self.log_polar_mapping = self._create_log_polar_mapping()
+        
+    def _create_log_polar_mapping(self):
+        """Crée un mapping log-polaire (approximation)"""
+        # Implementation simplifiée
+        return nn.Conv2d(1, 1, kernel_size=3, padding=1)
+    
+    def forward(self, retinal_signal: torch.Tensor):
+        """Projette le signal rétinien sur le cortex"""
+        # Pour une vraie implémentation, utiliser un sampling log-polaire
+        # Ici: simple interpolation spatiale
+        return F.interpolate(
+            retinal_signal.unsqueeze(1) if len(retinal_signal.shape) == 2 else retinal_signal,
+            size=self.cortical_shape,
+            mode='bilinear',
+            align_corners=False
+        )
+2. Module d'Apprentissage et Plasticité (plasticity.py)
+python
+"""
+Module plasticity.py - Mécanismes de plasticité synaptique
+STDP, Hebbian, homeostatic plasticity
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class STDPPlasticity(nn.Module):
+    """Plasticité Spike-Timing Dependent (STDP)"""
+    
+    def __init__(self, 
+                 learning_rate: float = 0.01,
+                 tau_plus: float = 20.0,
+                 tau_minus: float = 20.0,
+                 A_plus: float = 0.1,
+                 A_minus: float = 0.1):
+        super().__init__()
+        
+        self.learning_rate = learning_rate
+        self.tau_plus = tau_plus
+        self.tau_minus = tau_minus
+        self.A_plus = A_plus
+        self.A_minus = A_minus
+        
+        # Variables d'état
+        self.register_buffer('trace_pre', None)
+        self.register_buffer('trace_post', None)
+        
+    def update_weights(self, 
+                      weights: torch.Tensor,
+                      pre_spikes: torch.Tensor,
+                      post_spikes: torch.Tensor) -> torch.Tensor:
+        """Met à jour les poids selon la règle STDP"""
+        
+        batch_size = pre_spikes.shape[0]
+        
+        if self.trace_pre is None:
+            self.trace_pre = torch.zeros_like(weights)
+            self.trace_post = torch.zeros_like(weights)
+        
+        # Mettre à jour les traces
+        self.trace_pre = self.trace_pre * torch.exp(-1.0 / self.tau_plus) + pre_spikes
+        self.trace_post = self.trace_post * torch.exp(-1.0 / self.tau_minus) + post_spikes
+        
+        # Calculer les changements de poids
+        # LTP (post-before-pre)
+        ltp = self.A_plus * pre_spikes * self.trace_post.unsqueeze(0)
+        
+        # LTD (pre-before-post)
+        ltd = -self.A_minus * post_spikes * self.trace_pre.unsqueeze(0)
+        
+        # Mettre à jour les poids
+        delta_w = self.learning_rate * (ltp + ltd)
+        new_weights = weights + delta_w
+        
+        # Clipping des poids
+        new_weights = torch.clamp(new_weights, 0, 1)
+        
+        return new_weights
+
+
+class HebbianPlasticity(nn.Module):
+    """Plasticité Hebbienne (neurons that fire together, wire together)"""
+    
+    def __init__(self, 
+                 learning_rate: float = 0.01,
+                 decay_rate: float = 0.001):
+        super().__init__()
+        
+        self.learning_rate = learning_rate
+        self.decay_rate = decay_rate
+        
+    def update_weights(self,
+                      weights: torch.Tensor,
+                      pre_activation: torch.Tensor,
+                      post_activation: torch.Tensor) -> torch.Tensor:
+        """Règle de Oja (version normalisée de Hebb)"""
+        
+        # Règle de Oja: Δw = η * (y*x - y²*w)
+        batch_size = pre_activation.shape[0]
+        
+        # Calculer la corrélation
+        correlation = torch.einsum('bi,bj->bij', post_activation, pre_activation)
+        
+        # Normalisation (Oja)
+        weight_decay = torch.einsum('bi,ij->bij', post_activation**2, weights)
+        
+        # Mise à jour des poids
+        delta_w = self.learning_rate * (correlation.mean(dim=0) - weight_decay.mean(dim=0))
+        
+        # Décay des poids
+        delta_w = delta_w - self.decay_rate * weights
+        
+        new_weights = weights + delta_w
+        
+        # Normalisation
+        new_weights = F.normalize(new_weights, p=2, dim=1)
+        
+        return new_weights
+
+
+class HomeostaticPlasticity(nn.Module):
+    """Plasticité homéostatique (maintien de l'activité moyenne)"""
+    
+    def __init__(self,
+                 target_rate: float = 0.1,
+                 learning_rate: float = 0.001):
+        super().__init__()
+        
+        self.target_rate = target_rate
+        self.learning_rate = learning_rate
+        
+    def update_weights(self,
+                      weights: torch.Tensor,
+                      firing_rates: torch.Tensor) -> torch.Tensor:
+        """Ajuste les poids pour maintenir l'activité cible"""
+        
+        # Calculer l'erreur par rapport à la cible
+        error = firing_rates.mean() - self.target_rate
+        
+        # Ajuster les poids pour réduire l'erreur
+        if error > 0:  # Activité trop élevée
+            scale = 1.0 - self.learning_rate * error
+        else:  # Activité trop basse
+            scale = 1.0 + self.learning_rate * abs(error)
+        
+        new_weights = weights * scale
+        
+        return new_weights
+3. Module de Réseaux Spiking (spiking_networks.py)
+python
+"""
+Module spiking_networks.py - Réseaux de neurones spiking
+LIF neurons, Izhikevich models
+"""
+
+import torch
+import torch.nn as nn
+import numpy as np
+
+class LIFNeuron(nn.Module):
+    """Neurone Leaky Integrate-and-Fire"""
+    
+    def __init__(self,
+                 tau_mem: float = 10.0,
+                 threshold: float = 1.0,
+                 reset_mechanism: str = 'hard',
+                 device: str = 'cpu'):
+        super().__init__()
+        
+        self.tau_mem = tau_mem
+        self.threshold = threshold
+        self.reset_mechanism = reset_mechanism
+        self.device = device
+        
+        # État du neurone
+        self.register_buffer('mem_potential', None)
+        self.register_buffer('spike_train', None)
+        
+    def reset_state(self, batch_size: int, n_neurons: int):
+        """Réinitialise l'état du neurone"""
+        self.mem_potential = torch.zeros(batch_size, n_neurons, device=self.device)
+        self.spike_train = torch.zeros(batch_size, n_neurons, device=self.device)
+        
+    def forward(self, 
+                input_current: torch.Tensor,
+                dt: float = 1.0) -> torch.Tensor:
+        """Simule la dynamique du neurone"""
+        
+        batch_size, n_neurons = input_current.shape
+        
+        if self.mem_potential is None:
+            self.reset_state(batch_size, n_neurons)
+        
+        # Mise à jour du potentiel de membrane
+        dV = (-self.mem_potential + input_current) / self.tau_mem
+        self.mem_potential = self.mem_potential + dt * dV
+        
+        # Génération de spikes
+        spikes = (self.mem_potential >= self.threshold).float()
+        
+        # Réinitialisation après spike
+        if self.reset_mechanism == 'hard':
+            self.mem_potential = self.mem_potential * (1 - spikes)
+        elif self.reset_mechanism == 'soft':
+            self.mem_potential = self.mem_potential - spikes * self.threshold
+        
+        # Stocker les spikes
+        self.spike_train = spikes
+        
+        return spikes
+
+
+class IzhikevichNeuron(nn.Module):
+    """Modèle Izhikevich (plus biologique)"""
+    
+    def __init__(self,
+                 a: float = 0.02,
+                 b: float = 0.2,
+                 c: float = -65.0,
+                 d: float = 8.0,
+                 device: str = 'cpu'):
+        super().__init__()
+        
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+        self.device = device
+        
+        # État
+        self.register_buffer('v', None)  # Potentiel de membrane
+        self.register_buffer('u', None)  # Variable de récupération
+        
+    def reset_state(self, batch_size: int, n_neurons: int):
+        """Réinitialise l'état"""
+        self.v = torch.full((batch_size, n_neurons), self.c, device=self.device)
+        self.u = torch.zeros(batch_size, n_neurons, device=self.device)
+        
+    def forward(self, 
+                input_current: torch.Tensor,
+                dt: float = 1.0) -> torch.Tensor:
+        """Dynamique Izhikevich"""
+        
+        batch_size, n_neurons = input_current.shape
+        
+        if self.v is None:
+            self.reset_state(batch_size, n_neurons)
+        
+        # Équations d'Izhikevich
+        dv = 0.04 * self.v**2 + 5 * self.v + 140 - self.u + input_current
+        du = self.a * (self.b * self.v - self.u)
+        
+        self.v = self.v + dt * dv
+        self.u = self.u + dt * du
+        
+        # Génération de spikes
+        spikes = (self.v >= 30).float()
+        
+        # Réinitialisation
+        self.v = torch.where(spikes > 0, torch.tensor(self.c, device=self.device), self.v)
+        self.u = torch.where(spikes > 0, self.u + self.d, self.u)
+        
+        return spikes
+4. Architecture du Projet Complète
+Voici comment organiser les fichiers restants :
+
+text
+neurocortex/
+├── __init__.py
+├── retina/
+│   ├── __init__.py
+│   ├── photoreceptors.py
+│   ├── bipolar_cells.py
+│   └── ganglion_cells.py
+├── cortex/
+│   ├── __init__.py
+│   ├── areas/
+│   │   ├── __init__.py
+│   │   ├── v1.py
+│   │   ├── v2.py
+│   │   ├── v4.py
+│   │   └── mt.py
+│   ├── pathways/
+│   │   ├── __init__.py
+│   │   ├── ventral.py
+│   │   └── dorsal.py
+│   └── plasticity/
+│       ├── __init__.py
+│       ├── stdp.py
+│       └── hebbian.py
+├── networks/
+│   ├── __init__.py
+│   ├── spiking.py
+│   └── rate_based.py
+├── utils/
+│   ├── __init__.py
+│   ├── visualization.py
+│   └── metrics.py
+└── experiments/
+    ├── __init__.py
+    ├── train_cortex.py
+    └── benchmark.py
+5. Exemple d'Expérience (experiments/train_cortex.py)
+python
+"""
+Entraînement du modèle cortical complet
+"""
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+
+from neurocortex import IntegratedVisionSystem
+from neurocortex.utils.metrics import CorticalMetrics
+
+def train_cortical_model():
+    """Entraîne le modèle cortical sur ImageNet ou CIFAR"""
+    
+    # Configuration
+    config = {
+        'input_shape': (224, 224),
+        'use_retina': True,
+        'use_cortex': True,
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu'
+    }
+    
+    # Créer le modèle
+    model = IntegratedVisionSystem(**config)
+    model.train()
+    
+    # Données
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                           std=[0.229, 0.224, 0.225])
+    ])
+    
+    dataset = datasets.CIFAR10(root='./data', train=True, 
+                              download=True, transform=transform)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    
+    # Optimiseur
+    optimizer = optim.AdamW(model.parameters(), lr=0.001)
+    criterion = nn.CrossEntropyLoss()
+    
+    # Métriques
+    metrics = CorticalMetrics()
+    
+    # Boucle d'entraînement
+    for epoch in range(10):
+        for batch_idx, (images, labels) in enumerate(dataloader):
+            images = images.to(config['device'])
+            labels = labels.to(config['device'])
+            
+            # Forward pass
+            outputs = model(images)
+            predictions = outputs['final_output']
+            
+            # Calcul de la perte
+            loss = criterion(predictions, labels)
+            
+            # Backward pass
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            # Mettre à jour les métriques
+            metrics.update(predictions, labels, outputs)
+            
+            if batch_idx % 100 == 0:
+                print(f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+                
+        # Afficher les métriques
+        print(f"\nEpoch {epoch} Summary:")
+        print(metrics.summary())
+        metrics.reset()
+        
+    # Sauvegarder le modèle
+    torch.save(model.state_dict(), 'trained_cortex.pth')
+Prochaines priorités :
+Implémenter la rétine (retina.py) - CRITICAL
+
+Ajouter la plasticité (plasticity.py) - IMPORTANT
+
+Créer les réseaux spiking (spiking_networks.py) - NICE TO HAVE
+
+Développer les utilitaires (utils/) - IMPORTANT
+
+Créer des expériences (experiments/) - CRITICAL
